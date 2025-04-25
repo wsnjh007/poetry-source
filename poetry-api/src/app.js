@@ -4,14 +4,14 @@ const path = require('path');
 const cors = require('cors');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3030;
 
 // 中间件
 app.use(cors());
 app.use(express.json());
 
 // 数据路径
-const DATA_DIR = process.env.DATA_DIR || '/app/data';
+const DATA_DIR = process.env.DATA_DIR || '.';
 
 // 缓存所有诗歌数据
 let poetryCache = {
@@ -28,11 +28,14 @@ let authorCache = {};
 function initCache() {
   console.log('正在初始化缓存...');
   
-  // 加载诗歌数据
   loadCategoryData('诗');
   loadCategoryData('词');
   loadCategoryData('曲');
   loadCategoryData('其他');
+
+  // 添加这行：
+  console.log('已加载分类:', Object.keys(poetryCache));
+  console.log('诗分类下的朝代:', Object.keys(poetryCache['诗'] || {}));
   
   console.log('缓存初始化完成');
 }
@@ -92,6 +95,11 @@ function loadCategoryData(category) {
 // 随机获取一首诗
 app.get('/api/random', (req, res) => {
   const { category, dynasty } = req.query;
+
+  // 添加这几行调试日志：
+  console.log(`收到随机请求 category=${category} dynasty=${dynasty}`);
+  console.log('当前缓存中是否存在该分类？', poetryCache[category] !== undefined);
+  console.log('该分类中是否存在该朝代？', poetryCache[category]?.[dynasty] !== undefined);
   
   try {
     let result;

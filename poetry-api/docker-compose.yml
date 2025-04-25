@@ -7,9 +7,9 @@ services:
     ports:
       - "3030:3030"
     volumes:
-      - ../:/app/data
+      - ../source:/app/data/source
     environment:
       - NODE_ENV=production
       - PORT=3030
-      - DATA_DIR=/app/data
+      - DATA_DIR=/app/data/source
     restart: unless-stopped
