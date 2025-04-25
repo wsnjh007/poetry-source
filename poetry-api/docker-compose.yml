@@ -1,0 +1,15 @@
+version: '3'
+
+services:
+  poetry-api:
+    build: .
+    container_name: poetry-api
+    ports:
+      - "3030:3030"
+    volumes:
+      - ../:/app/data
+    environment:
+      - NODE_ENV=production
+      - PORT=3030
+      - DATA_DIR=/app/data
+    restart: unless-stopped
