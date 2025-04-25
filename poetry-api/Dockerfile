@@ -15,7 +15,7 @@ COPY . .
 ENV DATA_DIR=/app/data
 
 # 暴露端口
-EXPOSE 3000
+EXPOSE 3030
 
 # 启动命令
 CMD ["npm", "start"]

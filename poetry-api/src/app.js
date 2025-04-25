@@ -9,6 +9,7 @@ const PORT = process.env.PORT || 3030;
 // 中间件
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // 数据路径
 const DATA_DIR = process.env.DATA_DIR || '.';
@@ -42,7 +43,7 @@ function initCache() {
 
 // 加载分类数据
 function loadCategoryData(category) {
-  const categoryPath = path.join(DATA_DIR, 'source', category);
+  const categoryPath = path.join(DATA_DIR, category);
   
   if (!fs.existsSync(categoryPath)) {
     console.log(`目录不存在: ${categoryPath}`);
@@ -94,16 +95,34 @@ function loadCategoryData(category) {
 
 // 随机获取一首诗
 app.get('/api/random', (req, res) => {
-  const { category, dynasty } = req.query;
+  const rawCategory = (req.query.category || '').trim();
+  const rawDynasty = (req.query.dynasty || '').trim();
 
-  // 添加这几行调试日志：
+  let category = rawCategory;
+  let dynasty = rawDynasty;
+
+  // 修正中文乱码
+  if (/[\x80-\xff]+/.test(rawCategory)) {
+    category = Buffer.from(rawCategory, 'latin1').toString('utf8');
+  }
+  if (/[\x80-\xff]+/.test(rawDynasty)) {
+    dynasty = Buffer.from(rawDynasty, 'latin1').toString('utf8');
+  }
+
   console.log(`收到随机请求 category=${category} dynasty=${dynasty}`);
-  console.log('当前缓存中是否存在该分类？', poetryCache[category] !== undefined);
-  console.log('该分类中是否存在该朝代？', poetryCache[category]?.[dynasty] !== undefined);
-  
+  console.log('当前poetryCache[诗][唐]数据量：', poetryCache['诗']?.['唐']?.length || 0);
+  console.log('当前缓存中是否存在该分类？', poetryCache.hasOwnProperty(category));
+  console.log('该分类中是否存在该朝代？', poetryCache[category]?.hasOwnProperty(dynasty));
+  if (!poetryCache.hasOwnProperty(category)) {
+    console.warn(`⚠️ 未找到分类：${category}`);
+  }
+  if (poetryCache[category] && !poetryCache[category].hasOwnProperty(dynasty)) {
+    console.warn(`⚠️ 分类 ${category} 下未找到朝代：${dynasty}`);
+  }
+
   try {
     let result;
-    
+
     // 测试环境下返回模拟数据
     if (process.env.NODE_ENV === 'test') {
       if (category === '诗' && dynasty === '唐') {
@@ -141,7 +160,7 @@ app.get('/api/random', (req, res) => {
         });
       }
     }
-    
+
     // 正常环境下的逻辑
     if (category && dynasty) {
       // 指定分类和朝代
@@ -165,14 +184,14 @@ app.get('/api/random', (req, res) => {
       // 完全随机
       const categories = Object.keys(poetryCache);
       const randomCategory = categories[Math.floor(Math.random() * categories.length)];
-      
+
       const dynasties = Object.keys(poetryCache[randomCategory]);
       const randomDynasty = dynasties[Math.floor(Math.random() * dynasties.length)];
-      
+
       const poems = poetryCache[randomCategory][randomDynasty];
       result = poems[Math.floor(Math.random() * poems.length)];
     }
-    
+
     res.json(result);
   } catch (err) {
     console.error('获取随机诗歌失败:', err);
