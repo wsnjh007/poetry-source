@@ -93,106 +93,79 @@ function loadCategoryData(category) {
   });
 }
 
-// 随机获取一首诗
+// 随机获取诗歌，支持 category、dynasty、limit、author、keyword 查询
 app.get('/api/random', (req, res) => {
   const rawCategory = (req.query.category || '').trim();
   const rawDynasty = (req.query.dynasty || '').trim();
+  const rawAuthor = (req.query.author || '').trim();
+  const rawKeyword = (req.query.keyword || '').trim();
+  const limit = parseInt(req.query.limit) || 1;
 
   let category = rawCategory;
   let dynasty = rawDynasty;
+  let author = rawAuthor;
+  let keyword = rawKeyword;
 
-  // 修正中文乱码
   if (/[\x80-\xff]+/.test(rawCategory)) {
     category = Buffer.from(rawCategory, 'latin1').toString('utf8');
   }
   if (/[\x80-\xff]+/.test(rawDynasty)) {
     dynasty = Buffer.from(rawDynasty, 'latin1').toString('utf8');
   }
+  if (/[\x80-\xff]+/.test(rawAuthor)) {
+    author = Buffer.from(rawAuthor, 'latin1').toString('utf8');
+  }
+  if (/[\x80-\xff]+/.test(rawKeyword)) {
+    keyword = Buffer.from(rawKeyword, 'latin1').toString('utf8');
+  }
 
-  console.log(`收到随机请求 category=${category} dynasty=${dynasty}`);
-  console.log('当前poetryCache[诗][唐]数据量：', poetryCache['诗']?.['唐']?.length || 0);
-  console.log('当前缓存中是否存在该分类？', poetryCache.hasOwnProperty(category));
-  console.log('该分类中是否存在该朝代？', poetryCache[category]?.hasOwnProperty(dynasty));
-  if (!poetryCache.hasOwnProperty(category)) {
-    console.warn(`⚠️ 未找到分类：${category}`);
-  }
-  if (poetryCache[category] && !poetryCache[category].hasOwnProperty(dynasty)) {
-    console.warn(`⚠️ 分类 ${category} 下未找到朝代：${dynasty}`);
-  }
+  console.log(`收到随机请求 category=${category} dynasty=${dynasty} author=${author} keyword=${keyword} limit=${limit}`);
 
   try {
-    let result;
+    let candidates = [];
 
-    // 测试环境下返回模拟数据
-    if (process.env.NODE_ENV === 'test') {
-      if (category === '诗' && dynasty === '唐') {
-        return res.json({
-          id: 'tang001',
-          title: '静夜思',
-          authorName: '李白',
-          dynasty: '唐',
-          content: ['床前明月光，疑是地上霜。', '举头望明月，低头思故乡。']
-        });
-      } else if (category === '词' && dynasty === '宋') {
-        return res.json({
-          id: 'song001',
-          title: '江城子',
-          authorName: '苏轼',
-          dynasty: '宋',
-          content: ['十年生死两茫茫，不思量，自难忘。']
-        });
-      } else if (category === '曲' && dynasty === '元') {
-        return res.json({
-          id: 'yuan001',
-          title: '天净沙·秋思',
-          authorName: '马致远',
-          dynasty: '元',
-          content: ['枯藤老树昏鸦，小桥流水人家，古道西风瘦马。']
-        });
-      } else {
-        // 默认返回唐诗
-        return res.json({
-          id: 'tang001',
-          title: '静夜思',
-          authorName: '李白',
-          dynasty: '唐',
-          content: ['床前明月光，疑是地上霜。', '举头望明月，低头思故乡。']
-        });
-      }
-    }
-
-    // 正常环境下的逻辑
+    // 选择指定分类和朝代
     if (category && dynasty) {
-      // 指定分类和朝代
       if (poetryCache[category] && poetryCache[category][dynasty]) {
-        const poems = poetryCache[category][dynasty];
-        result = poems[Math.floor(Math.random() * poems.length)];
-      } else {
-        return res.status(404).json({ error: '未找到指定分类或朝代的诗歌' });
+        candidates = poetryCache[category][dynasty];
       }
     } else if (category) {
       // 只指定分类
-      const dynasties = Object.keys(poetryCache[category]);
-      if (dynasties.length > 0) {
-        const randomDynasty = dynasties[Math.floor(Math.random() * dynasties.length)];
-        const poems = poetryCache[category][randomDynasty];
-        result = poems[Math.floor(Math.random() * poems.length)];
-      } else {
-        return res.status(404).json({ error: '未找到指定分类的诗歌' });
-      }
+      const dynasties = Object.keys(poetryCache[category] || {});
+      dynasties.forEach(dyn => {
+        candidates = candidates.concat(poetryCache[category][dyn]);
+      });
     } else {
-      // 完全随机
-      const categories = Object.keys(poetryCache);
-      const randomCategory = categories[Math.floor(Math.random() * categories.length)];
-
-      const dynasties = Object.keys(poetryCache[randomCategory]);
-      const randomDynasty = dynasties[Math.floor(Math.random() * dynasties.length)];
-
-      const poems = poetryCache[randomCategory][randomDynasty];
-      result = poems[Math.floor(Math.random() * poems.length)];
+      // 什么都不指定，遍历全部
+      for (const cat of Object.keys(poetryCache)) {
+        for (const dyn of Object.keys(poetryCache[cat])) {
+          candidates = candidates.concat(poetryCache[cat][dyn]);
+        }
+      }
     }
 
-    res.json(result);
+    // 按作者筛选
+    if (author) {
+      candidates = candidates.filter(poem => poem.authorName === author);
+    }
+
+    // 按关键词筛选（标题或正文）
+    if (keyword) {
+      candidates = candidates.filter(poem => {
+        return (poem.title && poem.title.includes(keyword)) ||
+               (poem.content && poem.content.some(line => line.includes(keyword)));
+      });
+    }
+
+    if (candidates.length === 0) {
+      return res.status(404).json({ error: '未找到符合条件的诗歌' });
+    }
+
+    // 随机选 limit 首
+    const shuffled = candidates.sort(() => 0.5 - Math.random());
+    const selected = shuffled.slice(0, limit);
+
+    res.json(selected.length === 1 ? selected[0] : selected);
   } catch (err) {
     console.error('获取随机诗歌失败:', err);
     res.status(500).json({ error: '服务器内部错误' });
