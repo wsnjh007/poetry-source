@@ -306,6 +306,8 @@ app.get('/api/search', (req, res) => {
   const dynasty = rawDynasty.trim();
   const author = rawAuthor.trim();
 
+  console.log(`收到搜索请求 category=${category} dynasty=${dynasty} author=${author} keyword=${keyword} limit=${limit}`);
+
   if (!keyword && !author) {
     return res.status(400).json({ error: '请提供关键词或作者名' });
   }
@@ -401,6 +403,7 @@ app.get('/health', (req, res) => {
 
 // 新增 /api/status 接口
 app.get('/api/status', (req, res) => {
+  console.log('收到状态请求 /api/status');
   try {
     const categories = {};
     let totalPoems = 0;
@@ -420,6 +423,86 @@ app.get('/api/status', (req, res) => {
     });
   } catch (err) {
     console.error('获取状态失败:', err);
+    res.status(500).json({ error: '服务器内部错误' });
+  }
+});
+
+// 获取所有作者及出现次数
+app.get('/api/authors', (req, res) => {
+  try {
+    console.log('收到请求 /api/authors');
+    const authors = {};
+    for (const category of Object.keys(poetryCache)) {
+      for (const dynasty of Object.keys(poetryCache[category])) {
+        poetryCache[category][dynasty].forEach(poem => {
+          if (poem.authorName) {
+            authors[poem.authorName] = (authors[poem.authorName] || 0) + 1;
+          }
+        });
+      }
+    }
+    res.json(authors);
+  } catch (err) {
+    console.error('获取作者列表失败:', err);
+    res.status(500).json({ error: '服务器内部错误' });
+  }
+});
+
+// 获取关键词词频
+app.get('/api/keywords', (req, res) => {
+  try {
+    console.log('收到请求 /api/keywords');
+    const freq = {};
+    for (const category of Object.keys(poetryCache)) {
+      for (const dynasty of Object.keys(poetryCache[category])) {
+        poetryCache[category][dynasty].forEach(poem => {
+          const lines = poem.content || [];
+          lines.forEach(line => {
+            for (const char of line) {
+              if (char.trim()) {
+                freq[char] = (freq[char] || 0) + 1;
+              }
+            }
+          });
+        });
+      }
+    }
+    res.json(freq);
+  } catch (err) {
+    console.error('获取关键词词频失败:', err);
+    res.status(500).json({ error: '服务器内部错误' });
+  }
+});
+
+// 全文搜索接口
+app.get('/api/fulltext', (req, res) => {
+  let rawKeyword = req.query.keyword || '';
+  if (/[\x80-\xff]+/.test(rawKeyword)) {
+    rawKeyword = Buffer.from(rawKeyword, 'latin1').toString('utf8');
+  }
+  const keyword = rawKeyword.trim();
+
+  if (!keyword) {
+    return res.status(400).json({ error: '请提供关键词' });
+  }
+
+  console.log(`收到全文搜索请求 keyword=${keyword}`);
+
+  try {
+    let results = [];
+    for (const category of Object.keys(poetryCache)) {
+      for (const dynasty of Object.keys(poetryCache[category])) {
+        const matches = poetryCache[category][dynasty].filter(poem => {
+          return (poem.title && poem.title.includes(keyword)) ||
+                 (poem.content && poem.content.join('').includes(keyword));
+        });
+        results = results.concat(matches);
+      }
+    }
+
+    res.json(results);
+  } catch (err) {
+    console.error('全文搜索失败:', err);
     res.status(500).json({ error: '服务器内部错误' });
   }
 });
