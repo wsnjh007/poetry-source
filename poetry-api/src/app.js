@@ -281,8 +281,31 @@ app.get('/api/categories', (req, res) => {
 
 // 搜索诗歌
 app.get('/api/search', (req, res) => {
-  const { keyword, category, dynasty, author, limit = 10 } = req.query;
-  
+  let rawKeyword = req.query.keyword || '';
+  let rawCategory = req.query.category || '';
+  let rawDynasty = req.query.dynasty || '';
+  let rawAuthor = req.query.author || '';
+  const limit = req.query.limit || 10;
+
+  // 中文乱码修复
+  if (/[\x80-\xff]+/.test(rawKeyword)) {
+    rawKeyword = Buffer.from(rawKeyword, 'latin1').toString('utf8');
+  }
+  if (/[\x80-\xff]+/.test(rawCategory)) {
+    rawCategory = Buffer.from(rawCategory, 'latin1').toString('utf8');
+  }
+  if (/[\x80-\xff]+/.test(rawDynasty)) {
+    rawDynasty = Buffer.from(rawDynasty, 'latin1').toString('utf8');
+  }
+  if (/[\x80-\xff]+/.test(rawAuthor)) {
+    rawAuthor = Buffer.from(rawAuthor, 'latin1').toString('utf8');
+  }
+
+  const keyword = rawKeyword.trim();
+  const category = rawCategory.trim();
+  const dynasty = rawDynasty.trim();
+  const author = rawAuthor.trim();
+
   if (!keyword && !author) {
     return res.status(400).json({ error: '请提供关键词或作者名' });
   }
@@ -318,17 +341,28 @@ app.get('/api/search', (req, res) => {
     
     // 正常环境下的逻辑
     let results = [];
-    
-    // 遍历缓存中的所有诗歌
-    for (const cat of Object.keys(poetryCache)) {
-      // 如果指定了分类且不匹配，则跳过
-      if (category && cat !== category) continue;
-      
-      for (const dyn of Object.keys(poetryCache[cat])) {
-        // 如果指定了朝代且不匹配，则跳过
-        if (dynasty && dyn !== dynasty) continue;
-        
-        // 在当前朝代的诗歌中搜索
+
+    // 选择指定分类和朝代
+    let categoriesToSearch = [];
+    if (category) {
+      if (poetryCache[category]) {
+        categoriesToSearch.push(category);
+      }
+    } else {
+      categoriesToSearch = Object.keys(poetryCache);
+    }
+
+    categoriesToSearch.forEach(cat => {
+      let dynastiesToSearch = [];
+      if (dynasty) {
+        if (poetryCache[cat][dynasty]) {
+          dynastiesToSearch.push(dynasty);
+        }
+      } else {
+        dynastiesToSearch = Object.keys(poetryCache[cat]);
+      }
+
+      dynastiesToSearch.forEach(dyn => {
         const matches = poetryCache[cat][dyn].filter(poem => {
           // 作者匹配
           const authorMatch = author ? poem.authorName === author : true;
@@ -343,10 +377,10 @@ app.get('/api/search', (req, res) => {
           
           return authorMatch && keywordMatch;
         });
-        
+
         results = results.concat(matches);
-      }
-    }
+      });
+    });
     
     // 限制结果数量
     if (limit && results.length > limit) {
@@ -363,6 +397,31 @@ app.get('/api/search', (req, res) => {
 // 健康检查
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
+});
+
+// 新增 /api/status 接口
+app.get('/api/status', (req, res) => {
+  try {
+    const categories = {};
+    let totalPoems = 0;
+
+    for (const category of Object.keys(poetryCache)) {
+      categories[category] = {};
+      for (const dynasty of Object.keys(poetryCache[category])) {
+        const count = poetryCache[category][dynasty].length;
+        categories[category][dynasty] = count;
+        totalPoems += count;
+      }
+    }
+
+    res.json({
+      categories,
+      totalPoems
+    });
+  } catch (err) {
+    console.error('获取状态失败:', err);
+    res.status(500).json({ error: '服务器内部错误' });
+  }
 });
 
 // 启动服务器
